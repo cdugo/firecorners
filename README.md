@@ -1,4 +1,6 @@
 # FireCorners
+A lightweight, customizable hot corners implementation for macOS, inspired by the built-in hot corners feature but with more flexibility and power.
+
 <p align="center">
 
 
@@ -6,7 +8,6 @@
 
   </p>
 
-A lightweight, customizable hot corners implementation for macOS, inspired by the built-in hot corners feature but with more flexibility and power.
 
 
 
