@@ -13,284 +13,304 @@ import os
 import sys
 import json
 import time
-import argparse
-import subprocess
 from pathlib import Path
+from typing import Dict, Optional, Tuple
 
-try:
-    import Quartz
-    from AppKit import NSWorkspace, NSURL
-except ImportError:
-    print("Installing required dependencies...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "pyobjc"], check=True)
-    import Quartz
-    from AppKit import NSWorkspace, NSURL
+# Only import Quartz at startup since it's needed for core functionality
+import Quartz
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QThread, QTimer, pyqtSignal
 
 # Constants
 DEFAULT_CORNER_THRESHOLD = 5  # pixels from edge to trigger corner
-DEFAULT_CORNER_COOLDOWN = 3.0  # seconds between triggers
-DEFAULT_DWELL_TIME = 0.5  # seconds mouse must stay in corner before triggering
+DEFAULT_CORNER_COOLDOWN = 1.0  # seconds between triggers
+DEFAULT_DWELL_TIME = 0.0  # seconds mouse must stay in corner before triggering
+
+# Lazy imports and setup
+_logging = None
+_subprocess = None
+_argparse = None
+_config_window = None
+
+def setup_logging():
+    """Lazy setup of logging"""
+    global _logging
+    if _logging is None:
+        import logging
+        _logging = logging
+        log_dir = os.path.expanduser('~/.firecorners')
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        _logging.basicConfig(
+            level=_logging.INFO,  # Changed to INFO for better performance
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                _logging.FileHandler(os.path.join(log_dir, 'firecorners.log')),
+                _logging.StreamHandler()
+            ]
+        )
+    return _logging
+
+def get_subprocess():
+    """Lazy import of subprocess"""
+    global _subprocess
+    if _subprocess is None:
+        import subprocess
+        _subprocess = subprocess
+    return _subprocess
+
+def get_config_window():
+    """Lazy import of ConfigWindow"""
+    global _config_window
+    if _config_window is None:
+        try:
+            from firecorners.ui import ConfigWindow
+        except ImportError:
+            from ui import ConfigWindow
+        _config_window = ConfigWindow
+    return _config_window
+
+class HotCornersDaemon(QThread):
+    config_changed = pyqtSignal()
+
+    def __init__(self, config: Dict, threshold: int = 5, cooldown: float = 1.0, dwell: float = 0.0):
+        super().__init__()
+        self.config = config
+        self.threshold = config.get("settings", {}).get("threshold", threshold)
+        self.cooldown = config.get("settings", {}).get("cooldown", cooldown)
+        self.dwell = config.get("settings", {}).get("dwell", dwell)
+        self.last_corner = None
+        self.last_trigger_time = 0
+        self.corner_enter_time = 0
+        self.running = True
+        self.logger = None
+
+        # Set up config file watcher
+        self.config_path = get_config_path()
+        self.config_mtime = os.path.getmtime(self.config_path) if os.path.exists(self.config_path) else 0
+        
+        # Start config watcher timer with reduced frequency
+        self.config_timer = QTimer()
+        self.config_timer.timeout.connect(self.check_config)
+        self.config_timer.start(5000)  # Check every 5 seconds instead of every second
+        
+    def check_config(self):
+        """Check if config file has been modified"""
+        if os.path.exists(self.config_path):
+            try:
+                mtime = os.path.getmtime(self.config_path)
+                if mtime > self.config_mtime:
+                    self.logger.info("Config file changed, reloading...")
+                    self.config_mtime = mtime
+                    self.config = load_config()
+                    # Update settings when config changes
+                    self.threshold = self.config.get("settings", {}).get("threshold", self.threshold)
+                    self.cooldown = self.config.get("settings", {}).get("cooldown", self.cooldown)
+                    self.dwell = self.config.get("settings", {}).get("dwell", self.dwell)
+                    self.config_changed.emit()
+            except Exception:
+                pass  # Ignore errors during config check
+                
+    def run(self):
+        self.logger = setup_logging()
+        self.logger.info("HotCornersDaemon initialized with config: %s", self.config)
+        
+        screen_width, screen_height = get_screen_dimensions()
+        self.logger.info("Screen dimensions: %dx%d", screen_width, screen_height)
+        
+        while self.running:
+            try:
+                # Get current mouse position
+                mouse_loc = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+                x, y = int(mouse_loc.x), int(mouse_loc.y)
+                
+                # Check if we're in a corner
+                corner = None
+                if x <= self.threshold:
+                    if y <= self.threshold:
+                        corner = "top_left"
+                    elif y >= screen_height - self.threshold:
+                        corner = "bottom_left"
+                elif x >= screen_width - self.threshold:
+                    if y <= self.threshold:
+                        corner = "top_right"
+                    elif y >= screen_height - self.threshold:
+                        corner = "bottom_right"
+                
+                # Handle corner detection
+                current_time = time.time()
+                if corner:
+                    if corner != self.last_corner:
+                        self.corner_enter_time = current_time
+                        self.last_corner = corner
+                        self.logger.debug("Entered new corner: %s", corner)
+                    elif (current_time - self.last_trigger_time >= self.cooldown and
+                          current_time - self.corner_enter_time >= self.dwell):
+                        self.logger.info("Triggering actions for corner: %s", corner)
+                        self._trigger_corner_actions(corner)
+                        self.last_trigger_time = current_time
+                else:
+                    self.last_corner = None
+                
+                # Adaptive sleep based on corner state
+                time.sleep(0.05 if corner else 0.1)
+                
+            except Exception as e:
+                self.logger.error("Error in mouse monitoring: %s", e, exc_info=True)
+                time.sleep(1)
+    
+    def stop(self):
+        self.logger.info("Stopping daemon...")
+        self.running = False
+        self.config_timer.stop()
+    
+    def _trigger_corner_actions(self, corner: str):
+        actions = self.config.get(corner, [])
+        if not actions:
+            return
+            
+        subprocess = get_subprocess()
+        for action in actions:
+            action_type = action.get("type")
+            value = action.get("value")
+            
+            if not action_type or not value:
+                self.logger.warning("Invalid action in corner %s: %s", corner, action)
+                continue
+                
+            try:
+                self.logger.info("Executing %s action: %s", action_type, value)
+                if action_type == "URL":
+                    subprocess.run(["open", value])
+                elif action_type == "Application":
+                    subprocess.run(["open", "-a", value])
+                elif action_type == "Shell Command":
+                    subprocess.run(value, shell=True)
+                elif action_type == "AppleScript":
+                    subprocess.run(["osascript", "-e", value])
+                self.logger.info("Action executed successfully")
+            except Exception as e:
+                self.logger.error("Error executing %s action: %s", action_type, e, exc_info=True)
 
 def get_config_path():
-    """Get the path to the config file, considering both package and user locations"""
-    # First, check if there's a config in the user's home directory
-    user_config = Path.home() / ".firecorners" / "config.json"
-    if user_config.exists():
-        return user_config
-    
-    # Next, check if there's a config in the current directory
-    local_config = Path("config.json")
-    if local_config.exists():
-        return local_config
-    
-    # Finally, use the package config
-    package_dir = Path(__file__).parent
-    return package_dir / "config.json"
+    """Get the path to the config file"""
+    return Path.home() / ".firecorners" / "config.json"
 
 def parse_args():
     """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description="FireCorners - Hot Corners for macOS")
-    parser.add_argument("--threshold", type=int, default=DEFAULT_CORNER_THRESHOLD,
-                        help=f"Pixels from edge to trigger corner (default: {DEFAULT_CORNER_THRESHOLD})")
-    parser.add_argument("--cooldown", type=float, default=DEFAULT_CORNER_COOLDOWN,
-                        help=f"Seconds between triggers (default: {DEFAULT_CORNER_COOLDOWN})")
-    parser.add_argument("--dwell", type=float, default=DEFAULT_DWELL_TIME,
-                        help=f"Seconds mouse must stay in corner (default: {DEFAULT_DWELL_TIME})")
-    parser.add_argument("--no-test", action="store_true",
-                        help="Skip testing actions on startup")
-    parser.add_argument("--config", type=str,
-                        help="Path to custom config file")
+    global _argparse
+    if _argparse is None:
+        import argparse
+        _argparse = argparse
+        
+    parser = _argparse.ArgumentParser(description="FireCorners - A hot corners daemon for macOS")
+    parser.add_argument("--configure", action="store_true", help="Launch configuration UI")
+    parser.add_argument("--threshold", type=int, default=5, help="Corner detection threshold in pixels")
+    parser.add_argument("--cooldown", type=float, default=0.5, help="Cooldown period between triggers in seconds")
+    parser.add_argument("--dwell", type=float, default=0.0, help="Time to dwell in corner before triggering")
+    parser.add_argument("--config", type=str, help="Path to configuration file")
+    parser.add_argument("--no-test", action="store_true", help="Skip testing actions on startup")
     return parser.parse_args()
 
-def load_config(config_path=None):
+def get_screen_dimensions() -> Tuple[int, int]:
+    """Get the main screen dimensions"""
+    main_monitor = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID())
+    return int(main_monitor.size.width), int(main_monitor.size.height)
+
+def load_config(config_path: Optional[str] = None) -> Dict:
     """Load configuration from file"""
-    default_config = {
-        "top_left": {"type": "url", "value": "https://www.google.com"},
-        "top_right": {"type": "app", "value": "/Applications/Safari.app"},
-        "bottom_left": {"type": "shell", "value": "open -a 'System Preferences'"},
-        "bottom_right": {"type": "shell", "value": "pmset displaysleepnow"}
-    }
+    if not config_path:
+        config_path = os.path.expanduser("~/.firecorners/config.json")
     
-    if config_path is None:
-        config_path = get_config_path()
-    
-    try:
-        config_path = Path(config_path)
-        if config_path.exists():
+    if os.path.exists(config_path):
+        try:
             with open(config_path, 'r') as f:
                 return json.load(f)
-        else:
-            print(f"Config file not found at {config_path}")
-            print(f"Creating default config at {config_path}")
-            
-            # Create directory if it doesn't exist
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Write default config
-            with open(config_path, 'w') as f:
-                json.dump(default_config, f, indent=2)
-            
-            return default_config
-    except Exception as e:
-        print(f"Error loading configuration: {e}")
-        return default_config
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
-def get_mouse_position():
-    """Get the current mouse position using Quartz"""
-    mouse_loc = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
-    return (mouse_loc.x, mouse_loc.y)
-
-def get_screen_dimensions():
-    """Get the screen dimensions using Quartz"""
-    main_display = Quartz.CGMainDisplayID()
-    width = Quartz.CGDisplayPixelsWide(main_display)
-    height = Quartz.CGDisplayPixelsHigh(main_display)
-    return (width, height)
-
-def is_in_corner(x, y, screen_width, screen_height, threshold):
-    """Check if the mouse is in a corner and return which one"""
-    # Check each corner
-    if x <= threshold and y >= screen_height - threshold:
-        return "bottom_left"  # Bottom left (macOS coordinates)
-    elif x <= threshold and y <= threshold:
-        return "top_left"  # Top left (macOS coordinates)
-    elif x >= screen_width - threshold and y >= screen_height - threshold:
-        return "bottom_right"  # Bottom right (macOS coordinates)
-    elif x >= screen_width - threshold and y <= threshold:
-        return "top_right"  # Top right (macOS coordinates)
-    
-    return None
-
-def execute_action(action):
-    """Execute a configured action"""
-    action_type = action.get("type")
-    value = action.get("value")
-    
-    if not value:
-        return
-    
-    try:
-        print(f"Executing action: {action_type} - {value}")
-        
-        if action_type == "app":
-            # Use os.system directly
-            app_path = value
-            if not app_path.startswith("/"):
-                app_path = f"/Applications/{app_path}.app"
-            cmd = f"open '{app_path}'"
-            print(f"Running command: {cmd}")
-            os.system(cmd)
-        
-        elif action_type == "url":
-            # Use os.system directly
-            cmd = f"open '{value}'"
-            print(f"Running command: {cmd}")
-            os.system(cmd)
-        
-        elif action_type == "script":
-            # Run AppleScript
-            if value.endswith(".scpt") or value.endswith(".applescript"):
-                cmd = f"osascript '{value}'"
-            else:
-                cmd = f"osascript -e '{value}'"
-            print(f"Running command: {cmd}")
-            os.system(cmd)
-        
-        elif action_type == "shell":
-            # Run shell command
-            print(f"Running command: {value}")
-            os.system(value)
-        
-        print(f"Action executed successfully")
-        
-    except Exception as e:
-        print(f"Error executing action: {e}")
-
-def execute_corner_actions(corner, config):
-    """Execute all actions for a specific corner"""
-    if corner not in config:
-        return
-    
-    action = config[corner]
-    if isinstance(action, list):
-        for a in action:
-            execute_action(a)
-    else:
-        execute_action(action)
-
-def test_actions(config):
-    """Test all configured actions"""
-    print("\n=== Testing Actions ===")
-    
+def test_actions(config: Dict):
+    """Test that all configured actions are valid"""
     for corner, actions in config.items():
-        if not actions:
+        if not isinstance(actions, list) or not actions:
             continue
-        
-        print(f"\nTesting {corner} actions:")
-        if isinstance(actions, list):
-            for action in actions:
-                print(f"Testing action: {action}")
-                execute_action(action)
-                time.sleep(1)  # Wait a bit between actions
-        else:
-            print(f"Testing action: {actions}")
-            execute_action(actions)
-            time.sleep(1)
-    
-    print("\n=== Testing Complete ===\n")
-
-def show_corner_indicator(corner):
-    """Show a visual indicator for the detected corner"""
-    # Create a simple notification using AppleScript
-    corner_name = corner.replace("_", " ").title()
-    script = f'''
-    display notification "Corner Detected: {corner_name}" with title "FireCorners" subtitle "Action Triggered"
-    '''
-    os.system(f"osascript -e '{script}'")
+        logging.info("Testing actions for %s...", corner)
+        for action in actions:
+            action_type = action.get("type")
+            value = action.get("value")
+            if not action_type or not value:
+                logging.warning("Invalid action in %s", corner)
+                continue
+            logging.info("  %s: %s", action_type, value)
 
 def main():
     """Main function"""
     # Parse command line arguments
     args = parse_args()
     
-    # Set constants from arguments
-    CORNER_THRESHOLD = args.threshold
-    CORNER_COOLDOWN = args.cooldown
-    DWELL_TIME = args.dwell
+    # Initialize QApplication
+    app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     
-    print(f"Starting FireCorners Daemon with settings:")
-    print(f"  Corner threshold: {CORNER_THRESHOLD} pixels")
-    print(f"  Cooldown period: {CORNER_COOLDOWN} seconds")
-    print(f"  Dwell time: {DWELL_TIME} seconds")
+    # Set application metadata
+    app.setApplicationName("FireCorners")
+    app.setApplicationDisplayName("FireCorners")
+    app.setOrganizationName("FireCorners")
+    app.setOrganizationDomain("firecorners.local")
+    
+    # Create system tray icon
+    icon_path = os.path.join(os.path.dirname(__file__), "resources", "FireCorners.icns")
+    if not os.path.exists(icon_path):
+        # Try to find the icon in the app bundle
+        bundle_icon_path = os.path.join(os.path.dirname(sys.executable), "..", "Resources", "FireCorners.icns")
+        if os.path.exists(bundle_icon_path):
+            icon_path = bundle_icon_path
+    
+    tray_icon = QSystemTrayIcon(QIcon(icon_path))
+    
+    # Create tray menu
+    menu = QMenu()
+    configure_action = menu.addAction("Configure")
+    menu.addSeparator()
+    quit_action = menu.addAction("Quit")
+    
+    # Set the menu
+    tray_icon.setContextMenu(menu)
+    tray_icon.show()
     
     # Load configuration
     config = load_config(args.config if args.config else None)
     
-    # Print loaded configuration
-    print("Loaded configuration:")
-    for corner, actions in config.items():
-        if actions:
-            if isinstance(actions, list):
-                print(f"  {corner}: {len(actions)} action(s)")
-            else:
-                print(f"  {corner}: 1 action")
+    # Create and start the daemon thread
+    daemon = HotCornersDaemon(
+        config,
+        threshold=args.threshold,
+        cooldown=args.cooldown,
+        dwell=args.dwell
+    )
+    daemon.start()
     
-    # Test actions first (unless --no-test is specified)
-    if not args.no_test:
-        test_actions(config)
+    # Connect menu actions
+    def show_config():
+        ConfigWindow = get_config_window()
+        window = ConfigWindow()
+        window.show()
     
-    # Get screen dimensions
-    screen_width, screen_height = get_screen_dimensions()
-    print(f"Screen dimensions: {screen_width}x{screen_height}")
+    def quit_app():
+        daemon.stop()
+        app.quit()
     
-    # Initialize variables
-    last_corner = None
-    last_trigger_time = 0
-    corner_enter_time = 0
+    configure_action.triggered.connect(show_config)
+    quit_action.triggered.connect(quit_app)
     
-    print("Hot Corners daemon started")
-    print("Press Ctrl+C to exit")
+    # Launch configuration UI if requested
+    if args.configure:
+        show_config()
     
-    try:
-        while True:
-            # Get mouse position
-            x, y = get_mouse_position()
-            
-            # Check if in a corner
-            corner = is_in_corner(x, y, screen_width, screen_height, CORNER_THRESHOLD)
-            current_time = time.time()
-            
-            # If in a corner
-            if corner:
-                # If it's a new corner or we've reset after leaving corners
-                if corner != last_corner:
-                    corner_enter_time = current_time
-                    last_corner = corner
-                # If we've been in this corner long enough and cooldown has passed
-                elif (current_time - corner_enter_time >= DWELL_TIME and 
-                      current_time - last_trigger_time > CORNER_COOLDOWN):
-                    print(f"Corner detected: {corner} at position ({x}, {y})")
-                    print(f"Dwell time: {current_time - corner_enter_time:.2f} seconds")
-                    
-                    # Show visual indicator
-                    show_corner_indicator(corner)
-                    
-                    # Execute actions for this corner
-                    execute_corner_actions(corner, config)
-                    print(f"Actions executed for {corner}")
-                    
-                    # Update last trigger time
-                    last_trigger_time = current_time
-            # If not in a corner, reset last corner
-            else:
-                last_corner = None
-            
-            # Sleep to reduce CPU usage
-            time.sleep(0.1)
-    
-    except KeyboardInterrupt:
-        print("\nStopping Hot Corners daemon...")
-        sys.exit(0)
+    # Start the application
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main() 

@@ -2,6 +2,16 @@
 # FireCorners Launcher
 # This script launches the FireCorners daemon with custom settings
 
+# Get the directory where the script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# If we're in the app bundle, get the main executable
+if [[ "$SCRIPT_DIR" == *"FireCorners.app/Contents/Resources/scripts" ]]; then
+    FIRECORNERS_BIN="$SCRIPT_DIR/../../MacOS/FireCorners"
+else
+    FIRECORNERS_BIN="$SCRIPT_DIR/FireCorners"
+fi
+
 # Default settings
 THRESHOLD=5
 COOLDOWN=3.0
@@ -32,6 +42,11 @@ while [[ $# -gt 0 ]]; do
       CONFIG="--config=${1#*=}"
       shift
       ;;
+    --configure)
+      # Launch the configuration UI
+      "$FIRECORNERS_BIN" --configure
+      exit 0
+      ;;
     --help)
       echo "FireCorners Launcher"
       echo "Usage: ./run_firecorners.sh [options]"
@@ -42,6 +57,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --dwell=N.N      Seconds mouse must stay in corner (default: 0.5)"
       echo "  --no-test        Skip testing actions on startup"
       echo "  --config=PATH    Path to custom config file"
+      echo "  --configure      Launch the configuration UI"
       echo "  --help           Show this help message"
       exit 0
       ;;
@@ -66,4 +82,4 @@ if [ -n "$CONFIG" ]; then
 fi
 
 # Run the daemon
-python3 simple_hot_corners.py --threshold=$THRESHOLD --cooldown=$COOLDOWN --dwell=$DWELL $NO_TEST $CONFIG 
+"$FIRECORNERS_BIN" --threshold=$THRESHOLD --cooldown=$COOLDOWN --dwell=$DWELL $NO_TEST $CONFIG 

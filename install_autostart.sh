@@ -4,7 +4,13 @@
 
 # Get the current directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-FIRECORNERS_PATH="$SCRIPT_DIR/run_firecorners.sh"
+
+# If we're in the app bundle, get the scripts directory
+if [[ "$SCRIPT_DIR" == *"FireCorners.app/Contents/Resources/scripts" ]]; then
+    RUN_SCRIPT="$SCRIPT_DIR/run_firecorners.sh"
+else
+    RUN_SCRIPT="$SCRIPT_DIR/run_firecorners.sh"
+fi
 
 # Create logs directory
 mkdir -p ~/Library/Logs/FireCorners
@@ -13,7 +19,7 @@ mkdir -p ~/Library/Logs/FireCorners
 mkdir -p ~/Library/LaunchAgents
 
 # Path for the plist file
-PLIST_PATH=~/Library/LaunchAgents/com.user.firecorners.plist
+PLIST_PATH=~/Library/LaunchAgents/com.firecorners.app.plist
 
 # Check if we're uninstalling
 if [ "$1" == "uninstall" ]; then
@@ -32,9 +38,9 @@ if [ "$1" == "uninstall" ]; then
 fi
 
 # Check if the script exists and is executable
-if [ ! -x "$FIRECORNERS_PATH" ]; then
-    echo "❌ Error: $FIRECORNERS_PATH is not executable."
-    echo "Run 'chmod +x $FIRECORNERS_PATH' first."
+if [ ! -x "$RUN_SCRIPT" ]; then
+    echo "❌ Error: $RUN_SCRIPT is not executable."
+    echo "Run 'chmod +x $RUN_SCRIPT' first."
     exit 1
 fi
 
@@ -82,10 +88,11 @@ cat > "$PLIST_PATH" << EOF
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.user.firecorners</string>
+    <string>com.firecorners.app</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$FIRECORNERS_PATH</string>
+        <string>/bin/sh</string>
+        <string>$RUN_SCRIPT</string>
 EOF
 
 # Add command line arguments if specified
@@ -125,7 +132,7 @@ cat >> "$PLIST_PATH" << EOF
 EOF
 
 # Unload existing launch agent if it exists
-if launchctl list | grep -q "com.user.firecorners"; then
+if launchctl list | grep -q "com.firecorners.app"; then
     echo "Unloading existing FireCorners auto-start..."
     launchctl unload "$PLIST_PATH" 2>/dev/null
 fi
@@ -135,24 +142,9 @@ echo "Loading FireCorners auto-start..."
 launchctl load "$PLIST_PATH"
 
 # Check if it was loaded successfully
-if launchctl list | grep -q "com.user.firecorners"; then
-    echo "✅ FireCorners auto-start has been installed successfully!"
-    echo "Settings:"
-    echo "  Threshold: $THRESHOLD pixels"
-    echo "  Cooldown: $COOLDOWN seconds"
-    echo "  Dwell time: $DWELL seconds"
-    if [ -n "$NO_TEST" ]; then
-        echo "  Action tests disabled"
-    fi
-    if [ -n "$CONFIG" ]; then
-        echo "  Custom config: ${CONFIG#*=}"
-    fi
-    echo ""
-    echo "FireCorners will now start automatically when you log in."
-    echo "Logs will be written to: ~/Library/Logs/FireCorners/"
-    echo ""
-    echo "To uninstall, run: ./install_autostart.sh uninstall"
+if launchctl list | grep -q "com.firecorners.app"; then
+    echo "✅ FireCorners auto-start has been installed successfully."
 else
-    echo "❌ Failed to install FireCorners auto-start."
-    echo "Please check the error messages above."
+    echo "❌ Error: Failed to install FireCorners auto-start."
+    exit 1
 fi 

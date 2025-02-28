@@ -4,20 +4,21 @@
   <img src="firecorners/resources/logo.png" alt="FireCorners Logo" width="200" height="200">
 </p>
 
-A lightweight, customizable hot corners implementation for macOS that allows you to trigger actions when your mouse cursor reaches the corners of your screen.
+A lightweight, customizable hot corners implementation for macOS, inspired by the built-in hot corners feature but with more flexibility and power.
 
 ## Features
 
-- Trigger actions when your mouse reaches any screen corner
-- Configurable corner detection threshold
-- Adjustable cooldown period between triggers
-- Dwell time requirement (mouse must stay in corner for a specified time)
-- Visual notifications when corners are detected
-- Supports multiple action types:
-  - Open applications
+- Configure actions for each screen corner
+- Multiple actions per corner
+- Support for various action types:
   - Open URLs
+  - Launch applications
   - Run shell commands
-  - Execute scripts
+  - Execute AppleScript
+- Graphical configuration interface
+- Native macOS look and feel
+- Launch at login option
+- Configurable corner sensitivity and timing
 
 ## Installation
 
@@ -50,84 +51,94 @@ A lightweight, customizable hot corners implementation for macOS that allows you
 
 ### Option 3: Install as a Python Package
 
-```
+```bash
 pip install firecorners
 ```
 
 After installation, you can run FireCorners from anywhere:
 
+```bash
+firecorners [options]
 ```
-firecorners --dwell=0.2 --no-test
-```
-
-## Configuration
-
-Actions for each corner are defined in the `config.json` file with the following format:
-
-```json
-{
-  "top_left": {
-    "type": "url",
-    "value": "https://www.x.com/home"
-  },
-  "top_right": {
-    "type": "app",
-    "value": "/Applications/Obsidian.app"
-  },
-  "bottom_left": {
-    "type": "shell",
-    "value": "open -a 'System Preferences'"
-  },
-  "bottom_right": {
-    "type": "script",
-    "value": "/path/to/your/script.sh"
-  }
-}
-```
-
-The configuration file is searched for in the following locations (in order):
-
-1. `~/.firecorners/config.json` (user's home directory)
-2. `./config.json` (current directory)
-3. Package default configuration
-
-Each corner can have one of the following action types:
-
-- `app`: Opens an application (provide the full path)
-- `url`: Opens a URL in the default browser
-- `shell`: Executes a shell command
-- `script`: Runs a script file (must be executable)
 
 ## Usage
 
-### Running from Source
+### Graphical Configuration
 
-Run the script with default settings:
+The easiest way to configure FireCorners is through the graphical interface:
 
-```
-./run_firecorners.sh
-```
-
-Or customize the settings:
-
-```
-./run_firecorners.sh --threshold=10 --cooldown=2.0 --dwell=0.3 --no-test
+```bash
+firecorners --configure
 ```
 
-### Running as a Python Package
+This will open the configuration window where you can:
 
+- Select corners by clicking on them in the screen preview
+- Add, edit, and remove actions for each corner
+- Configure advanced settings like corner sensitivity and timing
+- Enable/disable launch at login
+
+### Command Line Usage
+
+You can also run FireCorners directly from the command line:
+
+```bash
+firecorners [options]
 ```
-firecorners --threshold=10 --cooldown=2.0 --dwell=0.3 --no-test
-```
 
-### Command-line Options
+Options:
 
-- `--threshold=N`: Set the number of pixels from the edge to trigger a corner (default: 5)
-- `--cooldown=N.N`: Set the seconds between triggers (default: 3.0)
-- `--dwell=N.N`: Set the seconds the mouse must stay in a corner (default: 0.5)
+- `--threshold=N`: Set the corner detection threshold in pixels (default: 5)
+- `--cooldown=N`: Set the cooldown period between triggers in seconds (default: 3.0)
+- `--dwell=N`: Set the dwell time required to trigger actions in seconds (default: 0.5)
 - `--no-test`: Skip testing actions on startup
-- `--config=PATH`: Specify a custom config file path
-- `--help`: Show help message
+- `--config=PATH`: Use a custom config file
+- `--configure`: Launch the configuration UI
+
+### Manual Configuration
+
+If you prefer to edit the configuration file directly, it's located at:
+
+```
+~/.firecorners/config.json
+```
+
+Example configuration:
+
+```json
+{
+  "top_left": [
+    {
+      "type": "url",
+      "value": "https://example.com"
+    }
+  ],
+  "top_right": [
+    {
+      "type": "app",
+      "value": "Safari.app"
+    }
+  ],
+  "bottom_left": [
+    {
+      "type": "shell",
+      "value": "open -a 'Mission Control'"
+    }
+  ],
+  "bottom_right": [
+    {
+      "type": "script",
+      "value": "tell application \"Safari\" to activate"
+    }
+  ],
+  "settings": {
+    "threshold": 5,
+    "cooldown": 3.0,
+    "dwell": 0.5,
+    "launch_at_login": false
+  }
+}
+```
 
 ## Auto-start at Login
 
