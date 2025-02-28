@@ -1,0 +1,18 @@
+{
+  "top_left": {
+    "type": "url",
+    "value": "https://www.google.com"
+  },
+  "top_right": {
+    "type": "app",
+    "value": "/Applications/Safari.app"
+  },
+  "bottom_left": {
+    "type": "shell",
+    "value": "open -a 'System Preferences'"
+  },
+  "bottom_right": {
+    "type": "shell",
+    "value": "pmset displaysleepnow"
+  }
+}

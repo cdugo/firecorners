@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="540" height="380" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="540" height="380" fill="#ffffff" rx="0" ry="0"/>
+  
+  <!-- Fire emoji -->
+  <text x="270" y="130" font-family="Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji" font-size="24" text-anchor="middle">🔥</text>
+  
+  <!-- Smaller arrow from left to right -->
+  <defs>
+    <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="0" refY="2" orient="auto">
+      <polygon points="0 0, 6 2, 0 4" fill="#ff7700"/>
+    </marker>
+  </defs>
+  <line x1="230" y1="190" x2="280" y2="190" stroke="#ff7700" stroke-width="1.2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Footer -->
+  <text x="270" y="340" font-family="Helvetica, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#999999">FireCorners - Hot Corners for macOS</text>
+</svg> 

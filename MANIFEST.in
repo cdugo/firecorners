@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include config.json
+include run_firecorners.sh
+include install_autostart.sh
+include build_binary.sh
+recursive-include firecorners/resources * 

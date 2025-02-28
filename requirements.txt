@@ -1,0 +1,7 @@
+PyQt6>=6.4.0
+pyobjc>=9.0
+pyobjc-framework-Cocoa>=9.0
+pyobjc-framework-Quartz>=9.0
+pynput>=1.7.6
+pillow>=9.0.0
+pyinstaller>=5.8.0

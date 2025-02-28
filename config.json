@@ -1,0 +1,16 @@
+{
+    "top_left": [
+        {
+            "type": "url",
+            "value": "https://www.x.com/home"
+        }
+    ],
+    "top_right": [
+        {
+            "type": "app",
+            "value": "/Applications/Obsidian.app"
+        }
+    ],
+    "bottom_left": [],
+    "bottom_right": []
+}
