@@ -24,7 +24,7 @@ A lightweight, customizable hot corners implementation for macOS, inspired by th
 
 ### Option 1: Download the Binary (Easiest)
 
-1. Download the latest release from the [Releases](https://github.com/yourusername/firecorners/releases) page
+1. Download the latest release from the [Releases](https://github.com/cdugo/firecorners/releases) page
 2. Mount the DMG file and drag FireCorners to your Applications folder
    - Simply drag the FireCorners icon to the Applications folder shortcut in the installer window
    - After copying is complete, eject the installer by dragging it to the Trash or right-clicking and selecting "Eject"
