@@ -1,10 +1,18 @@
 # FireCorners
-
 <p align="center">
+
+
   <img src="firecorners/resources/logo.png" alt="FireCorners Logo" width="200" height="200">
-</p>
+
+  </p>
 
 A lightweight, customizable hot corners implementation for macOS, inspired by the built-in hot corners feature but with more flexibility and power.
+
+
+
+
+
+
 
 ## Features
 
@@ -19,6 +27,10 @@ A lightweight, customizable hot corners implementation for macOS, inspired by th
 - Native macOS look and feel
 - Launch at login option
 - Configurable corner sensitivity and timing
+
+## Demo
+https://github.com/user-attachments/assets/d57c4dc2-c6c1-4a06-bdf4-ecbc9f9a3555
+
 
 ## Installation
 
